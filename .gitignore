@@ -1,0 +1,12 @@
+# Ignore Python virtual environments
+venv/
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+
+# Django DB
+db.sqlite3
+
+# Env files
+.env
