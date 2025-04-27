@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.shortcuts import get_object_or_404
 from .models import Node
 from accounts.models import UserProfile
 
@@ -25,18 +26,26 @@ class NodeSerializer(serializers.ModelSerializer):
             'collaborators',
         )
 
+    def get_user_profile(self):
+        """
+        Helper to fetch the UserProfile for the request user
+        """
+        request = self.context.get('request')
+        return get_object_or_404(UserProfile, username=request.user.username)
+
     def create(self, validated_data):
-        # Extract any collaborators provided
+        # Extract collaborators list if provided
         collaborators = validated_data.pop('collaborators', [])
         # Create the node
         node = Node.objects.create(**validated_data)
-        # Set collaborators (and always include the creator)
+        # Include provided collaborators and always add creator
+        profile = self.get_user_profile()
         node.collaborators.set(collaborators)
-        node.collaborators.add(self.context['request'].user.userprofile)
+        node.collaborators.add(profile)
         return node
-
+    
     def update(self, instance, validated_data):
-        # If collaborators are included, replace them
+        # Replace collaborators if provided
         if 'collaborators' in validated_data:
             instance.collaborators.set(validated_data.pop('collaborators'))
         # Update other fields
@@ -44,14 +53,15 @@ class NodeSerializer(serializers.ModelSerializer):
             setattr(instance, attr, val)
         instance.save()
         return instance
-
+    
     def validate_parent(self, parent):
         """
-        Optional: ensure the requesting user is a collaborator on the parent node.
+        Ensure the user is a collaborator on the parent before nesting under it.
         """
-        user_profile = self.context['request'].user.userprofile
-        if parent and user_profile not in parent.collaborators.all():
-            raise serializers.ValidationError(
-                "You must be a collaborator on the parent task to nest under it."
-            )
+        if parent:
+            profile = self.get_user_profile()
+            if profile not in parent.collaborators.all():
+                raise serializers.ValidationError(
+                    "You must be a collaborator on the parent task to nest under it."
+                )
         return parent

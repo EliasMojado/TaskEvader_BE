@@ -1,8 +1,17 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework.response import Response
 from .models import Node
 from .serializers import NodeSerializer
+from accounts.models import UserProfile
+
+def get_user_profile(request):
+    """
+    Helper to return the UserProfile for the logged-in AuthUser.
+    """
+    return get_object_or_404(UserProfile, username=request.user.username)
 
 class NodeListCreateAPIView(generics.ListCreateAPIView):
     """
@@ -13,8 +22,8 @@ class NodeListCreateAPIView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Only return nodes where the user is a collaborator
-        return Node.objects.filter(collaborators=self.request.user.userprofile)
+        profile = get_user_profile(self.request)
+        return Node.objects.filter(collaborators=profile)
 
 class NodeDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -27,9 +36,51 @@ class NodeDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        # Ensures 404 if the user isn’t a collaborator
+        profile = get_user_profile(self.request)
         return get_object_or_404(
             Node,
             id=self.kwargs['pk'],
-            collaborators=self.request.user.userprofile
+            collaborators=profile
         )
+    
+class RootNodeListAPIView(APIView):
+    """
+    GET /api/nodes/roots/
+      → list all top-level (parent=None) nodes the user collaborates on
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile = get_user_profile(request)
+        roots = Node.objects.get_root_nodes(request.user)
+        serializer = NodeSerializer(roots, many=True)
+        return Response(serializer.data)
+
+class NodeChildrenAPIView(APIView):
+    """
+    GET /api/nodes/<id>/children/?filter_by_user=true|false
+      → list ALL nested descendants of node <id>
+         if filter_by_user=true, only those where the user is a collaborator
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        profile = get_user_profile(request)
+        node = get_object_or_404(
+            Node,
+            id=pk,
+            collaborators=profile
+        )
+
+        # parse the flag (defaults to False)
+        fv = request.query_params.get('filter_by_user', 'false').lower()
+        filter_by_user = fv in ('1', 'true', 'yes')
+
+        # collect descendants
+        children = node.get_all_child_nodes(
+            filter_by_user=filter_by_user,
+            user=request.user if filter_by_user else None
+        )
+
+        serializer = NodeSerializer(children, many=True)
+        return Response(serializer.data)
