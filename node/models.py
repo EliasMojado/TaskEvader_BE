@@ -2,9 +2,8 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from accounts.models import UserProfile
 from django.dispatch import receiver
-from django.db.models.signals import m2m_changed
+from django.db.models.signals import m2m_changed, post_save
 from django.utils import timezone
-from accounts.models import UserProfile
 
 class NodeManager(models.Manager):
     def get_root_nodes(self, user):
@@ -68,8 +67,11 @@ class Node(models.Model):
                        related_name='nodes',
                        blank=True
                    )
+    completed_subtasks = models.PositiveIntegerField(default=0)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
+    # Add a flag to prevent recursive saves
+    _is_updating_subtask_count = False
 
     objects = NodeManager()
 
@@ -86,8 +88,59 @@ class Node(models.Model):
     def save(self, *args, **kwargs):
         # Always validate before saving
         self.clean()
-        return super().save(*args, **kwargs)
+        
+        # Check if node has a parent and we're not in an update cycle
+        has_parent = self.parent is not None
+        
+        # Detect if this is an existing record (has pk) being updated
+        is_update = self.pk is not None
+        
+        # First save the node
+        super().save(*args, **kwargs)
+        
+        # Update parent after saving for any status change (both to DONE or from DONE)
+        # but only if we're not already in an update cycle
+        if has_parent and is_update and not self._is_updating_subtask_count:
+            self.update_parent_completed_subtasks()
     
+    def update_parent_completed_subtasks(self):
+        """
+        Updates the parent's completed_subtasks count and status if needed.
+        """
+        if self.parent:
+            # Count completed children for the parent
+            completed_count = self.parent.children.filter(status=self.Status.DONE).count()
+            total_count = self.parent.children.count()
+            
+            # Update the parent's completed_subtasks
+            self.parent._is_updating_subtask_count = True
+            try:
+                self.parent.completed_subtasks = completed_count
+                
+                # Check if parent status should be updated
+                if completed_count == total_count and total_count > 0:
+                    # All children are done, mark parent as done
+                    self.parent.status = self.Status.DONE
+                elif completed_count < total_count and self.parent.status == self.Status.DONE:
+                    # Not all children are done but parent is marked as done,
+                    # revert parent back to ONGOING
+                    self.parent.status = self.Status.ONGOING
+                
+                # Use update() to avoid triggering signals
+                Node.objects.filter(pk=self.parent.pk).update(
+                    completed_subtasks=completed_count,
+                    status=self.parent.status
+                )
+                
+                # Refresh from database since we bypassed signals
+                self.parent.refresh_from_db()
+                
+                # Continue up the tree - propagate changes upward regardless of status
+                if self.parent.parent:
+                    self.parent.update_parent_completed_subtasks()
+            finally:
+                self.parent._is_updating_subtask_count = False
+
     def get_all_child_nodes(self, filter_by_user=False, user=None, max_depth=None):
         """
         Recursively collect descendants up to max_depth.
@@ -113,7 +166,7 @@ class Node(models.Model):
     def __str__(self):
         return self.title
 
-# ——— PROPAGATE collaborator “up” the tree ———
+# ——— PROPAGATE collaborator "up" the tree ———
 
 @receiver(m2m_changed, sender=Node.collaborators.through)
 def _propagate_collaborator(sender, instance, action, pk_set, **kwargs):
@@ -129,3 +182,4 @@ def _propagate_collaborator(sender, instance, action, pk_set, **kwargs):
                 # .add(...) is idempotent
                 parent.collaborators.add(userprofile_pk)
                 parent = parent.parent
+

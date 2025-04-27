@@ -21,9 +21,8 @@ class NodeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Node
         fields = (
-            'id', 'title', 'description', 'deadline', 
-            'priority', 'status', 'parent', 'children',
-            'collaborators',
+            'id', 'title', 'description', 'deadline', 'priority', 'status',
+            'parent', 'children', 'collaborators', 'completed_subtasks'
         )
 
     def get_user_profile(self):

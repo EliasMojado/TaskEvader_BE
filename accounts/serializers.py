@@ -1,27 +1,55 @@
 from rest_framework import serializers
 from .models import UserProfile
 from django.contrib.auth.models import User as AuthUser
+from rest_framework.validators import UniqueValidator
 from rest_framework.authtoken.models import Token
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    # write-only raw password
+    password = serializers.CharField(write_only=True, required=False)
+
+    # proxy AuthUser.email here
+    email = serializers.EmailField(
+        source='auth_user.email',
+        required=False,
+        validators=[
+            UniqueValidator(
+                queryset=AuthUser.objects.all(),
+                message="This email is already in use."
+            )
+        ]
+    )
 
     class Meta:
         model = UserProfile
-        fields = ('username', 'display_name', 'profile_pic', 'password',)
+        fields = (
+            'username',
+            'email',
+            'display_name',
+            'profile_pic',
+            'password',
+        )
+        read_only_fields = ('username',)  # you probably don’t want to change username here
 
-    def create(self, validated_data):
-        password = validated_data.pop('password')
-        user = super().create(validated_data)
-        user.set_password(password)
-        return user
-    
     def update(self, instance, validated_data):
-        raw = validated_data.pop('password', None)
-        user = super().update(instance, validated_data)
-        if raw:
-            user.set_password(raw) # hash once, only if provided
-        return user
+        # 1) Pop out nested auth_user data
+        auth_data = validated_data.pop('auth_user', {})
+        raw_password = validated_data.pop('password', None)
+
+        # 2) Update profile fields
+        profile = super().update(instance, validated_data)
+
+        # 3) Update the linked AuthUser’s email, if provided
+        if 'email' in auth_data:
+            auth_user = AuthUser.objects.get(username=instance.username)
+            auth_user.email = auth_data['email']
+            auth_user.save(update_fields=['email'])
+
+        # 4) Update password, if provided
+        if raw_password:
+            profile.set_password(raw_password)
+
+        return profile
     
 class RegisterSerializer(serializers.ModelSerializer):
     # Profile fields
@@ -30,7 +58,18 @@ class RegisterSerializer(serializers.ModelSerializer):
     # AuthUser fields — write_only so they don't get read from UserProfile
     first_name = serializers.CharField(write_only=True, required=True, allow_blank=False)
     last_name  = serializers.CharField(write_only=True, required=True, allow_blank=False)
-    email      = serializers.EmailField   (write_only=True, required=True)
+
+    email = serializers.EmailField(
+        write_only=True,
+        required=True,
+        validators=[
+            UniqueValidator(
+                queryset=AuthUser.objects.all(),
+                message="A user with that email already exists."
+            )
+        ]
+    )
+
     password   = serializers.CharField    (write_only=True, required=True, allow_blank=False)
 
     class Meta:
@@ -69,3 +108,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         Token.objects.create(user=auth_user)
 
         return profile
+
+class MinimalProfileSerializer(serializers.ModelSerializer):
+    """
+    Serializer that only returns display_name and profile_pic
+    """
+    class Meta:
+        model = UserProfile
+        fields = ('display_name', 'profile_pic')

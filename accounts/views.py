@@ -3,7 +3,7 @@
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models      import UserProfile
-from .serializers import RegisterSerializer, UserProfileSerializer
+from .serializers import RegisterSerializer, UserProfileSerializer, MinimalProfileSerializer
 
 class RegisterAPIView(generics.CreateAPIView):
     """
@@ -25,3 +25,13 @@ class MyAccountAPIView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return UserProfile.objects.get(username=self.request.user.username)
+
+
+class ProfileByIdAPIView(generics.RetrieveAPIView):
+    """
+    GET /api/profile/<id>/ 
+      → Returns only display_name and profile_pic for a specific user
+    """
+    serializer_class = MinimalProfileSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = UserProfile.objects.all()
