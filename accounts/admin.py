@@ -1,18 +1,18 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import User as ClientUser
+from .models import UserProfile as ClientUser  # updated import
 
 @admin.register(ClientUser)
 class ClientUserAdmin(admin.ModelAdmin):
     list_display = (
         'id',
         'username',
-        'name',
+        'display_name',         # updated field name
         'profile_pic_preview',
     )
     readonly_fields = ('profile_pic_preview',)
-    search_fields = ('username', 'name')
+    search_fields = ('username', 'display_name')  # updated search field
     ordering = ('id',)
 
     def profile_pic_preview(self, obj):
