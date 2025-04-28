@@ -116,3 +116,32 @@ class MinimalProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = ('display_name', 'profile_pic')
+
+class CompleteProfileSerializer(serializers.ModelSerializer):
+    # Include the AuthUser fields
+    first_name = serializers.CharField(source='auth_user.first_name', read_only=True)
+    last_name = serializers.CharField(source='auth_user.last_name', read_only=True)
+    email = serializers.EmailField(source='auth_user.email', read_only=True)
+    
+    class Meta:
+        model = UserProfile
+        fields = (
+            'username',
+            'display_name',
+            'profile_pic',
+            'first_name',
+            'last_name',
+            'email',
+        )
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=8)
+    
+    def validate_current_password(self, value):
+        user = self.context['request'].user
+        # Check if the current password is correct
+        if not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value
