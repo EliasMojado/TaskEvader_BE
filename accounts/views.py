@@ -1,12 +1,14 @@
 # accounts/views.py
 
-from rest_framework import generics
+from rest_framework import generics, filters
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models      import UserProfile
 from .serializers import RegisterSerializer, UserProfileSerializer, MinimalProfileSerializer, CompleteProfileSerializer, ChangePasswordSerializer
 from django.contrib.auth.models import User as AuthUser
 from rest_framework.response import Response
 from rest_framework import status
+from django.db.models import Q
+
 
 class RegisterAPIView(generics.CreateAPIView):
     """
@@ -87,3 +89,24 @@ class ChangePasswordAPIView(generics.GenericAPIView):
             }, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+class UserSearchAPIView(generics.ListAPIView):
+    """
+    GET /api/search-users/?q=<search_term>
+      → Searches for users by username
+    """
+    serializer_class = CompleteProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        query = self.request.query_params.get('q', '').strip()
+        if not query:
+            return UserProfile.objects.none()
+
+        profiles = UserProfile.objects.filter(
+            Q(username__icontains=query)
+        ).distinct()
+
+        return profiles
+
