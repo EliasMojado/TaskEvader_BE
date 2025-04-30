@@ -100,8 +100,29 @@ class Node(models.Model):
         
         # Update parent after saving for any status change (both to DONE or from DONE)
         # but only if we're not already in an update cycle
-        if has_parent and is_update and not self._is_updating_subtask_count:
-            self.update_parent_completed_subtasks()
+        if has_parent and not self._is_updating_subtask_count:
+            if is_update:
+                self.update_parent_completed_subtasks()
+
+            self.update_parent_deadline()
+
+    def update_parent_deadline(self):
+        """
+        If this node's deadline is later than its parent's deadline,
+        update the parent's deadline to match.
+        """
+        if self.parent and self.deadline:
+            # If parent has no deadline or child's deadline is later
+            if not self.parent.deadline or (self.deadline > self.parent.deadline):
+                # Use update() to avoid triggering signals and infinite recursion
+                Node.objects.filter(pk=self.parent.pk).update(deadline=self.deadline)
+                
+                # Refresh from database since we bypassed signals
+                self.parent.refresh_from_db()
+                
+                # Continue up the tree - propagate changes upward
+                if self.parent.parent:
+                    self.parent.update_parent_deadline()
     
     def update_parent_completed_subtasks(self):
         """
