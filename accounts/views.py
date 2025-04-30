@@ -94,7 +94,8 @@ class ChangePasswordAPIView(generics.GenericAPIView):
 class UserSearchAPIView(generics.ListAPIView):
     """
     GET /api/search-users/?q=<search_term>
-      → Searches for users by username
+      → Searches for users by username or email
+      → Excludes the current user from the search results
     """
     serializer_class = CompleteProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -104,9 +105,18 @@ class UserSearchAPIView(generics.ListAPIView):
         if not query:
             return UserProfile.objects.none()
 
-        profiles = UserProfile.objects.filter(
-            Q(username__icontains=query)
-        ).distinct()
+        # Get the current user
+        current_user = self.request.user.username
+        
+        # Search matching usernames from UserProfile, excluding the current user
+        username_matches = UserProfile.objects.filter(username__icontains=query).exclude(username=current_user)
 
-        return profiles
+        # Search emails in AuthUser, then get matching usernames, excluding the current user
+        email_matches = AuthUser.objects.filter(email__icontains=query).exclude(username=current_user).values_list('username', flat=True)
+        email_profile_matches = UserProfile.objects.filter(username__in=email_matches)
+
+        # Combine both querysets using union and exclude the current user
+        return (username_matches | email_profile_matches).distinct()
+
+
 

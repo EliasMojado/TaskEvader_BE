@@ -126,6 +126,7 @@ class CompleteProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = (
+            'id',
             'username',
             'display_name',
             'profile_pic',
