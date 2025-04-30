@@ -68,6 +68,8 @@ class Node(models.Model):
                        blank=True
                    )
     completed_subtasks = models.PositiveIntegerField(default=0)
+    ongoing_subtasks = models.PositiveIntegerField(default=0)
+    missed_subtasks = models.PositiveIntegerField(default=0)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
     # Add a flag to prevent recursive saves
@@ -123,21 +125,26 @@ class Node(models.Model):
                 # Continue up the tree - propagate changes upward
                 if self.parent.parent:
                     self.parent.update_parent_deadline()
-    
+
     def update_parent_completed_subtasks(self):
         """
-        Updates the parent's completed_subtasks count and status if needed.
+        Updates the parent's completed_subtasks, ongoing_subtasks, and missed_subtasks counts
+        and adjusts the parent's status if needed.
         """
         if self.parent:
-            # Count completed children for the parent
+            # Count children by their statuses
             completed_count = self.parent.children.filter(status=self.Status.DONE).count()
+            ongoing_count = self.parent.children.filter(status=self.Status.ONGOING).count()
+            missed_count = self.parent.children.filter(status=self.Status.MISSED).count()
             total_count = self.parent.children.count()
-            
-            # Update the parent's completed_subtasks
+
+            # Update the parent's subtask fields
             self.parent._is_updating_subtask_count = True
             try:
                 self.parent.completed_subtasks = completed_count
-                
+                self.parent.ongoing_subtasks = ongoing_count
+                self.parent.missed_subtasks = missed_count
+
                 # Check if parent status should be updated
                 if completed_count == total_count and total_count > 0:
                     # All children are done, mark parent as done
@@ -146,16 +153,18 @@ class Node(models.Model):
                     # Not all children are done but parent is marked as done,
                     # revert parent back to ONGOING
                     self.parent.status = self.Status.ONGOING
-                
+
                 # Use update() to avoid triggering signals
                 Node.objects.filter(pk=self.parent.pk).update(
                     completed_subtasks=completed_count,
+                    ongoing_subtasks=ongoing_count,
+                    missed_subtasks=missed_count,
                     status=self.parent.status
                 )
-                
+
                 # Refresh from database since we bypassed signals
                 self.parent.refresh_from_db()
-                
+
                 # Continue up the tree - propagate changes upward regardless of status
                 if self.parent.parent:
                     self.parent.update_parent_completed_subtasks()
