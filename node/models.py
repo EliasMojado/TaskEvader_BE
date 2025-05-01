@@ -55,6 +55,7 @@ class Node(models.Model):
                        choices=Status.choices,
                        default=Status.ONGOING
                    )
+    icon         = models.CharField(max_length=10, default="📝")  # Default pencil emoji
     parent       = models.ForeignKey(
                        'self',
                        null=True,
