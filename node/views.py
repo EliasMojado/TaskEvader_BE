@@ -24,6 +24,29 @@ class NodeListCreateAPIView(generics.ListCreateAPIView):
     def get_queryset(self):
         profile = get_user_profile(self.request)
         return Node.objects.filter(collaborators=profile)
+    
+    def perform_create(self, serializer):
+        profile = get_user_profile(self.request)
+        node = serializer.save()  # Save first to get the instance
+
+        # Ensure the creator is a collaborator
+        node.collaborators.add(profile)
+
+        # Propagate all collaborators to parent chain
+        self._propagate_collaborators_upwards(node)
+
+    def _propagate_collaborators_upwards(self, node):
+        """
+        For every collaborator on the given node, add them to all ancestor nodes.
+        """
+        collaborators = node.collaborators.all()
+        current = node.parent
+
+        while current is not None:
+            for collab in collaborators:
+                if collab not in current.collaborators.all():
+                    current.collaborators.add(collab)
+            current = current.parent
 
 class NodeDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
