@@ -1,4 +1,4 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
@@ -84,3 +84,23 @@ class NodeChildrenAPIView(APIView):
 
         serializer = NodeSerializer(children, many=True)
         return Response(serializer.data)
+    
+
+class NodeCascadeDeleteAPIView(APIView):
+    """
+    DELETE /api/nodes/<id>/cascade-delete/
+      → deletes the node with <id> and all its descendant nodes
+      → only allowed if the user is a collaborator on the node
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        profile = get_user_profile(request)
+
+        # Ensure user is a collaborator
+        node = get_object_or_404(Node, id=pk, collaborators=profile)
+
+        # Delete node (cascades automatically due to on_delete=models.CASCADE)
+        node.delete()
+
+        return Response({'message': 'Node and all its children were deleted.'}, status=status.HTTP_204_NO_CONTENT)
