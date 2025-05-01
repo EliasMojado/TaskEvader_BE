@@ -22,7 +22,8 @@ class NodeSerializer(serializers.ModelSerializer):
         model = Node
         fields = (
             'id', 'title', 'description', 'deadline', 'priority', 'status',
-            'parent', 'children', 'collaborators', 'completed_subtasks'
+            'parent', 'children', 'collaborators', 'completed_subtasks',
+            'missed_subtasks', 'ongoing_subtasks'
         )
 
     def get_user_profile(self):
@@ -41,6 +42,13 @@ class NodeSerializer(serializers.ModelSerializer):
         profile = self.get_user_profile()
         node.collaborators.set(collaborators)
         node.collaborators.add(profile)
+
+        # Update parent's ongoing_subtasks count if a parent exists
+        if node.parent:
+            parent = node.parent
+            ongoing_count = parent.children.filter(status=Node.Status.ONGOING).count()
+            parent.ongoing_subtasks = ongoing_count
+            parent.save()
         return node
     
     def update(self, instance, validated_data):
