@@ -23,7 +23,7 @@ class NodeSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'title', 'description', 'deadline', 'priority', 'status',
             'parent', 'children', 'collaborators', 'completed_subtasks',
-            'missed_subtasks', 'ongoing_subtasks'
+            'missed_subtasks', 'ongoing_subtasks', 'icon'
         )
 
     def get_user_profile(self):
