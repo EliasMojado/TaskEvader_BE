@@ -8,7 +8,7 @@ urlpatterns = [
     path('nodes/<int:pk>/', NodeDetailAPIView.as_view(), name='node-detail'),
     path('nodes/roots/',            RootNodeListAPIView.as_view(),     name='node-root-list'),
     path('nodes/<int:pk>/children/', NodeChildrenAPIView.as_view(),    name='node-children'),
-    path('api/nodes/<int:pk>/cascade-delete/', NodeCascadeDeleteAPIView.as_view(), name='node-cascade-delete'),
+    path('api/nodes/<int:pk>/delete/', NodeCascadeDeleteAPIView.as_view(), name='node-cascade-delete'),
 ]
 
 urlpatterns += static(
