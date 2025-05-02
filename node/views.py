@@ -65,6 +65,13 @@ class NodeDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
             id=self.kwargs['pk'],
             collaborators=profile
         )
+    def perform_update(self, serializer):
+        profile = get_user_profile(self.request)
+        node = serializer.save()
+
+        # Ensure the user remains a collaborator
+        if profile not in node.collaborators.all():
+            node.collaborators.add(profile)
     
 class RootNodeListAPIView(APIView):
     """

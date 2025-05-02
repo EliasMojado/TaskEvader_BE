@@ -23,6 +23,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = (
+            'id',
             'username',
             'email',
             'display_name',
@@ -115,7 +116,7 @@ class MinimalProfileSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = UserProfile
-        fields = ('display_name', 'profile_pic')
+        fields = ('id', 'display_name', 'profile_pic')
 
 class CompleteProfileSerializer(serializers.ModelSerializer):
     # Include the AuthUser fields
