@@ -111,21 +111,31 @@ class Node(models.Model):
 
     def update_parent_deadline(self):
         """
-        If this node's deadline is later than its parent's deadline,
-        update the parent's deadline to match.
+        Updates the parent's deadline based on active children's deadlines:
+        1. If no children, keep parent's deadline as is
+        2. If all children are DONE, keep parent's deadline as is
+        3. If any children are ONGOING/MISSED, set parent's deadline to latest deadline among them
         """
-        if self.parent and self.deadline:
-            # If parent has no deadline or child's deadline is later
-            if not self.parent.deadline or (self.deadline > self.parent.deadline):
-                # Use update() to avoid triggering signals and infinite recursion
-                Node.objects.filter(pk=self.parent.pk).update(deadline=self.deadline)
+        if self.parent:
+            # Get all non-completed children (ONGOING or MISSED)
+            active_children = self.parent.children.exclude(status=self.Status.DONE)
+            
+            # If there are active children with deadlines
+            if active_children.exists() and active_children.exclude(deadline=None).exists():
+                # Find the latest deadline among active children
+                latest_deadline = active_children.exclude(deadline=None).order_by('-deadline').first().deadline
                 
-                # Refresh from database since we bypassed signals
-                self.parent.refresh_from_db()
-                
-                # Continue up the tree - propagate changes upward
-                if self.parent.parent:
-                    self.parent.update_parent_deadline()
+                # Update parent's deadline if it differs
+                if not self.parent.deadline or self.parent.deadline != latest_deadline:
+                    # Use update() to avoid triggering signals and infinite recursion
+                    Node.objects.filter(pk=self.parent.pk).update(deadline=latest_deadline)
+                    
+                    # Refresh from database since we bypassed signals
+                    self.parent.refresh_from_db()
+                    
+                    # Continue up the tree - propagate changes upward
+                    if self.parent.parent:
+                        self.parent.update_parent_deadline()
 
     def update_parent_completed_subtasks(self):
         """
