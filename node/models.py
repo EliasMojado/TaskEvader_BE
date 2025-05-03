@@ -2,7 +2,7 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from accounts.models import UserProfile
 from django.dispatch import receiver
-from django.db.models.signals import m2m_changed, post_save
+from django.db.models.signals import m2m_changed, post_save, post_delete
 from django.utils import timezone
 
 class NodeManager(models.Manager):
@@ -214,3 +214,66 @@ def _propagate_collaborator(sender, instance, action, pk_set, **kwargs):
                 parent.collaborators.add(userprofile_pk)
                 parent = parent.parent
 
+@receiver(post_delete, sender=Node)
+def _update_parent_after_delete(sender, instance, **kwargs):
+    """
+    When a node is deleted, update its parent's subtask counts and deadline.
+    """
+    if instance.parent:
+        # Make a copy of the parent reference since the instance is being deleted
+        parent = instance.parent
+        
+        # Update subtask counts
+        completed_count = parent.children.filter(status=Node.Status.DONE).count()
+        ongoing_count = parent.children.filter(status=Node.Status.ONGOING).count()
+        missed_count = parent.children.filter(status=Node.Status.MISSED).count()
+        total_count = parent.children.count()
+
+        # Find the latest deadline among remaining children
+        latest_deadline = None
+        if total_count > 0:
+            # Query to find the latest deadline among remaining children
+            # Filter out null deadlines with .exclude(deadline__isnull=True)
+            child_with_latest_deadline = parent.children.exclude(deadline__isnull=True).order_by('-deadline').first()
+            if child_with_latest_deadline:
+                latest_deadline = child_with_latest_deadline.deadline
+
+        # Update the parent
+        parent._is_updating_subtask_count = True
+        try:
+            parent.completed_subtasks = completed_count
+            parent.ongoing_subtasks = ongoing_count
+            parent.missed_subtasks = missed_count
+
+            # Update parent status if needed
+            if completed_count == total_count and total_count > 0:
+                parent.status = Node.Status.DONE
+            elif completed_count < total_count and parent.status == Node.Status.DONE:
+                parent.status = Node.Status.ONGOING
+
+            # Prepare update fields
+            update_fields = {
+                'completed_subtasks': completed_count,
+                'ongoing_subtasks': ongoing_count,
+                'missed_subtasks': missed_count,
+                'status': parent.status
+            }
+            
+            # Add deadline to update if it should change
+            if latest_deadline != parent.deadline:
+                update_fields['deadline'] = latest_deadline
+            
+            # Use update() to avoid triggering other signals
+            Node.objects.filter(pk=parent.pk).update(**update_fields)
+
+            # Refresh parent from DB
+            parent.refresh_from_db()
+
+            # Continue up the tree
+            if parent.parent:
+                parent.update_parent_completed_subtasks()
+                # Also update deadline propagation
+                if latest_deadline:
+                    parent.update_parent_deadline()
+        finally:
+            parent._is_updating_subtask_count = False
