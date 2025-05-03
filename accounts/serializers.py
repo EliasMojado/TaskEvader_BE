@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import UserProfile
 from django.contrib.auth.models import User as AuthUser
 from rest_framework.validators import UniqueValidator
-from rest_framework.authtoken.models import Token
+from rest_framework_simplejwt.tokens import RefreshToken
 
 class UserProfileSerializer(serializers.ModelSerializer):
     # write-only raw password
@@ -105,8 +105,12 @@ class RegisterSerializer(serializers.ModelSerializer):
             email      = email,
         )
 
-        # 3) Issue a token
-        Token.objects.create(user=auth_user)
+        # 3) Generate JWT token
+        refresh = RefreshToken.for_user(auth_user)
+        profile.token = {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
 
         return profile
 
