@@ -2,6 +2,9 @@
 
 from rest_framework import generics, filters
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+
 from .models      import UserProfile
 from .serializers import RegisterSerializer, UserProfileSerializer, MinimalProfileSerializer, CompleteProfileSerializer, ChangePasswordSerializer
 from django.contrib.auth.models import User as AuthUser
@@ -9,15 +12,33 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
 
-
-class RegisterAPIView(generics.CreateAPIView):
+class HealthCheckAPIView(APIView):
     """
-    POST /api/register/ 
-      → Validates: username, password, display_name, first_name, last_name, email
-      → Creates UserProfile + AuthUser + Token
+    GET /api/health/
+      → Returns a simple message to confirm the server is reachable
     """
-    serializer_class   = RegisterSerializer
     permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        return Response({"message": "Server is reachable"}, status=200)
+
+class RegisterAPIView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request, *args, **kwargs):
+        serializer = RegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            profile = serializer.save()
+
+            # Generate tokens for the created user
+            auth_user = AuthUser.objects.get(username=profile.username)
+            refresh = RefreshToken.for_user(auth_user)
+
+            return Response({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class MyAccountAPIView(generics.RetrieveUpdateAPIView):
